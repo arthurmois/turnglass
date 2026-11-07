@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Turnglass</title>
+<style>
+  :root {
+    --bg:#f7f6f3; --surface:#fff; --raised:#fbfaf8; --line:#e6e2db; --hair:#f0ede7;
+    --ink:#1d1b18; --ink-2:#6b665e; --ink-3:#a39d94; --accent:#1d1b18; --danger:#b9382a;
+    --shadow:0 1px 2px rgba(20,18,14,.04),0 4px 16px rgba(20,18,14,.04);
+    --p1:#d1495b; --p2:#c9971c; --p3:#3f9142; --p4:#3b6fd4; --p5:#8a4fd1;
+    --white-player:#9a958c;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#141311; --surface:#1e1d1a; --raised:#242320; --line:#322f2a; --hair:#2a2724;
+    --ink:#f2efe9; --ink-2:#a39d94; --ink-3:#6b665e; --accent:#f2efe9; --danger:#e8766a;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 4px 20px rgba(0,0,0,.25);
+    --p1:#e8697a; --p2:#e3b54a; --p3:#5fb963; --p4:#6b95e8; --p5:#ab7ce8;
+    --white-player:#e8e4dc;}}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;padding:24px 16px calc(56px + env(safe-area-inset-bottom));background:var(--bg);
+       color:var(--ink);font:400 16px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+       -webkit-font-smoothing:antialiased}
+  .wrap{max-width:560px;margin:0 auto}
+  header{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:22px}
+  .brand h1{font-size:17px;font-weight:600;margin:0;letter-spacing:-.01em}
+  .conn{display:flex;align-items:center;gap:7px;margin-top:3px}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--ink-3);flex:none}
+  .dot.on{background:#3f9142;box-shadow:0 0 0 3px rgba(63,145,66,.16)}
+  .conn span{font-size:12.5px;color:var(--ink-2)}
+  button{font:inherit;font-size:14px;font-weight:500;padding:9px 16px;border-radius:9px;
+         border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;
+         white-space:nowrap;transition:border-color .15s,background .15s,opacity .15s}
+  button:hover:not(:disabled){border-color:var(--ink-3)}
+  button.primary{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+  button:disabled{opacity:.35;cursor:default}
+  .fault{display:none;gap:11px;align-items:flex-start;border:1px solid var(--danger);
+         border-radius:12px;padding:13px 15px;margin-bottom:18px;font-size:13.5px;
+         line-height:1.45;color:var(--danger)}
+  .fault.show{display:flex}
+  .fault b{display:block;font-weight:600;margin-bottom:2px}
+  .hero{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px 14px 18px;
+        margin-bottom:14px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+
+  /* ---- seat dashboard ---- */
+  .stage{position:relative;height:180px;transition:height .5s cubic-bezier(.3,0,.2,1)}
+  .seat{position:absolute;left:0;top:0;width:60px;height:60px;border-radius:50%;
+        display:flex;flex-direction:column;align-items:center;justify-content:center;
+        background:color-mix(in srgb,var(--pc) 14%,var(--surface));
+        border:2px solid color-mix(in srgb,var(--pc) 55%,var(--surface));
+        transition:left .6s cubic-bezier(.3,0,.2,1),top .6s cubic-bezier(.3,0,.2,1),
+                   width .6s cubic-bezier(.3,0,.2,1),height .6s cubic-bezier(.3,0,.2,1),
+                   opacity .4s,border-color .4s,background .4s}
+  .seat.dim{opacity:.72}
+  .seat.off{opacity:0;pointer-events:none;animation:none}
+  .seat .num{font-weight:500;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em;
+             color:color-mix(in srgb,var(--pc) 70%,var(--ink));
+             transition:font-size .6s cubic-bezier(.3,0,.2,1)}
+  .seat .lab,.seat .el,.seat .turn{display:none}
+  .seat .turn{position:absolute;bottom:15%;left:50%;transform:translateX(-50%);
+              align-items:baseline;gap:.35em;white-space:nowrap;line-height:1;
+              font-variant-numeric:tabular-nums}
+  .seat .turn i{font-style:normal;font-size:.68em;font-weight:600;letter-spacing:.08em;
+                text-transform:uppercase;color:color-mix(in srgb,var(--pc) 70%,var(--ink));opacity:.8}
+  .seat .turn b{font-weight:400;color:var(--ink)}
+  .seat.active.warn .turn b,.seat.active.alarm .turn b{color:color-mix(in srgb,var(--pc) 75%,var(--ink))}
+  .seat .lab{font-size:10.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+             color:color-mix(in srgb,var(--pc) 70%,var(--ink));margin-bottom:3px}
+  .seat .el{font-weight:300;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+  .seat .tot{position:absolute;top:calc(100% + 7px);left:50%;transform:translateX(-50%);
+             font-size:11.5px;color:var(--ink-3);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .seat.active{border-width:3px;border-color:var(--pc);opacity:1;
+               background:color-mix(in srgb,var(--pc) 22%,var(--surface));
+               animation:breathe 2.2s ease-in-out infinite}
+  .seat.active .num{display:none}
+  .seat.active .lab,.seat.active .el{display:block}
+  .seat.active .turn{display:flex}
+  /* total sits dead centre; name and turn line are pinned above and below it */
+  .seat.active .lab{position:absolute;top:19%;left:50%;transform:translateX(-50%);
+                    margin:0;white-space:nowrap}
+  .seat .turn{bottom:19%}
+  .seat.active .tot{color:var(--ink-2)}
+  .seat.active.warn{animation-duration:1.1s}
+  .seat.active.alarm{animation:alarm .4s steps(1) infinite}
+  @keyframes breathe{
+    0%,100%{transform:scale(1);
+      box-shadow:0 0 12px 1px color-mix(in srgb,var(--pc) 28%,transparent),
+                 0 0 0 0 color-mix(in srgb,var(--pc) 20%,transparent)}
+    50%{transform:scale(1.035);
+      box-shadow:0 0 40px 12px color-mix(in srgb,var(--pc) 55%,transparent),
+                 0 0 0 9px color-mix(in srgb,var(--pc) 12%,transparent)}}
+  @keyframes alarm{
+    0%{box-shadow:0 0 46px 16px color-mix(in srgb,var(--pc) 75%,transparent),
+                  0 0 0 10px color-mix(in srgb,var(--pc) 25%,transparent)}
+    50%{box-shadow:none}}
+  @media (prefers-reduced-motion:reduce){
+    .seat{transition:none}
+    .seat.active,.seat.active.warn,.seat.active.alarm{animation:none;
+      box-shadow:0 0 28px 6px color-mix(in srgb,var(--pc) 45%,transparent)}}
+  .status{text-align:center;font-size:13px;color:var(--ink-2);margin-top:6px;min-height:20px}
+  .status b{font-weight:600;color:color-mix(in srgb,var(--sc,var(--ink)) 75%,var(--ink))}
+
+  /* ---- who's playing toggles ---- */
+  .table{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 24px 2px}
+  .table span{font-size:10.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+              color:var(--ink-3);margin-right:4px}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:6px 11px 6px 9px;border-radius:999px;
+        font-size:13px;background:var(--surface)}
+  .pill::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--pc);
+                transition:opacity .2s}
+  .pill[aria-pressed="true"]{border-color:var(--pc);
+        background:color-mix(in srgb,var(--pc) 10%,var(--surface))}
+  .pill[aria-pressed="false"]{color:var(--ink-3)}
+  .pill[aria-pressed="false"]::before{opacity:.3}
+
+  .hero-meta{display:flex;justify-content:center;gap:28px;margin-top:16px;padding-top:15px;border-top:1px solid var(--hair);
+             font-size:12.5px;color:var(--ink-2)}
+  .hero-meta div{display:flex;flex-direction:column;align-items:center;gap:1px}
+  .hero-meta i{font-style:normal;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
+  .hero-meta b{font-weight:500;font-variant-numeric:tabular-nums;color:var(--ink);font-size:14px}
+  h2{font-size:10.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+     color:var(--ink-3);margin:0 0 10px 2px}
+  section{margin-bottom:26px}
+  .player{background:var(--surface);border:1px solid var(--line);border-radius:13px;
+          padding:14px 16px;margin-bottom:8px;transition:border-color .3s,opacity .3s}
+  .player.idle{opacity:.45}
+  .player.active{border-color:var(--pc)}
+  .p-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+  .p-name{font-weight:600;font-size:14.5px;display:flex;align-items:center;gap:8px}
+  .swatch{width:9px;height:9px;border-radius:50%;background:var(--pc);flex:none}
+  .p-time{font-size:22px;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .p-bar{height:4px;border-radius:2px;background:var(--hair);margin-top:11px;overflow:hidden}
+  .p-fill{height:100%;width:0;border-radius:2px;background:var(--pc);transition:width .6s cubic-bezier(.3,0,.2,1)}
+  .p-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:2px 8px;margin-top:12px}
+  .p-stats div{display:flex;flex-direction:column}
+  .p-stats i{font-style:normal;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+  .p-stats b{font-weight:500;font-size:13px;font-variant-numeric:tabular-nums}
+  .rounds{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:16px}
+  .rchart{display:flex;align-items:flex-end;gap:4px;height:70px}
+  .rbar{flex:1;min-height:3px;border-radius:3px 3px 1px 1px;background:var(--ink-3);opacity:.5}
+  .rbar:hover{opacity:.9}
+  .rfoot{display:flex;justify-content:space-between;margin-top:11px;padding-top:11px;
+         border-top:1px solid var(--hair);font-size:12.5px;color:var(--ink-2)}
+  .rfoot b{color:var(--ink);font-weight:500;font-variant-numeric:tabular-nums}
+  .empty{background:var(--surface);border:1px dashed var(--line);border-radius:13px;padding:16px;
+         color:var(--ink-3);font-size:13.5px;line-height:1.45}
+  .insight{background:var(--surface);border:1px solid var(--line);border-radius:13px;
+           padding:13px 16px;margin-bottom:8px;font-size:13.5px;line-height:1.5;color:var(--ink-2)}
+  .insight i{font-style:normal;display:block;font-size:10px;letter-spacing:.08em;
+             text-transform:uppercase;color:var(--ink-3);margin-bottom:4px}
+  .insight b{color:var(--ink);font-weight:600}
+  details{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:0 16px}
+  details[open]{padding-bottom:4px}
+  summary{cursor:pointer;padding:14px 0;font-size:13.5px;font-weight:500;list-style:none;
+          display:flex;align-items:center;gap:8px}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"›";margin-left:auto;color:var(--ink-3);font-size:18px;
+                 transform:rotate(90deg);transition:transform .2s}
+  details[open] summary::after{transform:rotate(-90deg)}
+  .field{padding:13px 0;border-top:1px solid var(--hair)}
+  .field-top{display:flex;align-items:center;justify-content:space-between;gap:14px}
+  .field label{font-size:13.5px;color:var(--ink)}
+  .field .hint{font-size:11.5px;color:var(--ink-3);margin-top:3px}
+  .field output{font-size:13px;color:var(--ink-2);font-variant-numeric:tabular-nums;
+                min-width:46px;text-align:right}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;margin-top:11px;height:3px;
+                    border-radius:2px;background:var(--line);outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:17px;height:17px;
+    border-radius:50%;background:var(--accent);cursor:pointer;border:3px solid var(--surface);
+    box-shadow:0 0 0 1px var(--line)}
+  input[type=number]{font:inherit;font-size:13.5px;width:74px;padding:6px 9px;text-align:right;
+    border:1px solid var(--line);border-radius:8px;background:var(--raised);color:var(--ink);
+    font-variant-numeric:tabular-nums}
+  .palette{display:grid;grid-template-columns:repeat(7,23px);gap:7px;margin-top:10px}
+  .chip{width:23px;height:23px;border-radius:50%;cursor:pointer;border:2px solid transparent;
+        padding:0;background-clip:padding-box;transition:transform .12s}
+  .chip:hover{transform:scale(1.12)}
+  .chip[data-hex="#ffffff"]{box-shadow:inset 0 0 0 1px var(--ink-3)}
+  .chip[aria-pressed="true"]{box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--ink)}
+  .chip[data-hex="#ffffff"][aria-pressed="true"]{
+    box-shadow:inset 0 0 0 1px var(--ink-3),0 0 0 2px var(--surface),0 0 0 4px var(--ink)}
+  .preset{padding:13px 0 14px}
+  .preset-row{display:flex;gap:8px;margin-top:10px}
+  select,.preset input[type=text]{font:inherit;font-size:13.5px;padding:7px 9px;
+    border:1px solid var(--line);border-radius:8px;background:var(--raised);color:var(--ink);min-width:0}
+  select,.preset input[type=text]{flex:1}
+  .preset button{padding:7px 12px;font-size:13px}
+  .savebar{display:flex;align-items:center;gap:12px;padding:14px 0;border-top:1px solid var(--hair)}
+  .savebar span{font-size:12.5px;color:var(--ink-2)}
+  .note{font-size:12.5px;color:var(--ink-3);line-height:1.5;margin:22px 2px 0}
+  .err{color:var(--danger);font-size:13px;margin-top:12px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <h1>Turnglass</h1>
+      <div class="conn"><span class="dot" id="dot"></span><span id="statusText">Not connected</span></div>
+    </div>
+    <div>
+      <button id="connect" class="primary">Connect</button>
+      <button id="disconnect" disabled>Disconnect</button>
+    </div>
+  </header>
+
+  <div class="fault" id="fault"><span>⚠</span>
+    <span><b>Contacts shorted</b>The token sees a direct connection across its pads with no resistor between them. Check the tray for metal or debris across the contacts.</span></div>
+
+  <div class="hero" id="hero">
+    <div class="stage" id="stage"></div>
+    <div class="status" id="status">Not connected</div>
+    <div class="hero-meta">
+      <div><i>Round</i><b id="mRound">—</b></div>
+      <div><i>Session</i><b id="mSession">0:00</b></div>
+      <div><i>Play</i><b id="mPlay">0:00</b></div>
+    </div>
+  </div>
+
+  <div class="table" id="table"><span>Playing</span></div>
+
+  <section><h2>Players</h2><div id="players"></div></section>
+  <section><h2>Rounds</h2><div id="roundsWrap"></div></section>
+  <section><h2>Insights</h2><div id="insights"></div></section>
+
+  <section>
+    <details>
+      <summary>Token settings</summary>
+      <div class="field preset" style="border-top:none">
+        <label for="preset">Game</label>
+        <div class="hint">Each game keeps its own colors and timing.</div>
+        <div class="preset-row">
+          <select id="preset"></select>
+          <button type="button" id="presetDel">Delete</button>
+        </div>
+        <div class="preset-row">
+          <input type="text" id="presetName" placeholder="Name this setup" autocomplete="off">
+          <button type="button" id="presetSave">Save</button>
+        </div>
+      </div>
+      <div class="field">
+        <div class="field-top"><label for="br">Brightness</label><output id="brOut">120</output></div>
+        <input type="range" id="br" min="5" max="255" value="120">
+      </div>
+      <div class="field">
+        <div class="field-top"><label for="pulse">Breathing</label><output id="pulseOut">82</output></div>
+        <div class="hint">How strongly the light pulses during someone's turn. 0 holds steady.</div>
+        <input type="range" id="pulse" min="0" max="100" value="82">
+      </div>
+      <div class="field">
+        <div class="field-top">
+          <div><label for="warn">Overtime warning</label>
+               <div class="hint">Seconds. Their color, with a short dropout.</div></div>
+          <input type="number" id="warn" min="5" max="900" value="45">
+        </div>
+      </div>
+      <div class="field">
+        <div class="field-top">
+          <div><label for="alarm">Overtime alarm</label>
+               <div class="hint">Seconds. Their color, strobing.</div></div>
+          <input type="number" id="alarm" min="10" max="1800" value="90">
+        </div>
+      </div>
+      <div class="field" id="colorFields"></div>
+      <div class="savebar"><button id="save" disabled>Send to token</button><span id="saveMsg"></span></div>
+    </details>
+  </section>
+
+  <p class="note">Hold the token's button for 2.5 seconds to start a new session — it flashes amber three times to confirm.</p>
+  <div class="err" id="err"></div>
+</div>
+
+<script>
+const SERVICE_UUID='12345678-1234-1234-1234-1234567890ab';
+const CHAR_LIVE   ='12345678-1234-1234-1234-1234567890ac';
+const CHAR_FULL   ='12345678-1234-1234-1234-1234567890ad';
+const CHAR_CFG    ='12345678-1234-1234-1234-1234567890ae';
+const N=5, $=id=>document.getElementById(id);
+// Matches the firmware defaults; also used to fill presets saved with fewer players.
+const DEFAULT_COLORS=['#ff0000','#ffb000','#00ff00','#0000ff','#8000ff'];
+const fillColors=c=>DEFAULT_COLORS.map((d,i)=>nearest((c&&c[i])||d));
+
+// Values are exactly what the token's LED is sent.
+const PALETTE=[['Red','#ff0000'],['Orange','#ff4600'],
+ ['Gold','#ffb000'],['Yellow','#ffe800'],
+ ['Green','#00ff00'],['Mint','#00ff90'],
+ ['Light blue','#40a0ff'],['Dark blue','#0000ff'],
+ ['Purple','#8000ff'],['Lavender','#c070ff'],
+ ['Pink','#ff60c0'],['Hot pink','#ff0070'],['White','#ffffff']];
+// The LED gets the real color; the page shows white as a silver so a white
+// player's circle, card and glow don't vanish into a light background.
+function setPlayerColor(n,hex){
+  const shown=hex.toLowerCase()==='#ffffff'?'var(--white-player)':hex;
+  document.documentElement.style.setProperty(`--p${n}`,shown);
+}
+// What the token is actually running. The dashboard follows this, not the
+// settings form, so picking colors or timings changes nothing on screen
+// until they're sent. Remembered so the page looks right before connecting.
+const APPLIED_KEY='tt_applied';
+let applied=(()=>{try{const a=JSON.parse(localStorage.getItem(APPLIED_KEY));
+  if(a&&Array.isArray(a.colors))return a;}catch(e){}
+  return {colors:[...DEFAULT_COLORS],warn:45000,alarm:90000};})();
+function apply(next){
+  applied={...applied,...next};
+  applied.colors=fillColors(applied.colors);
+  applied.colors.forEach((h,i)=>setPlayerColor(i+1,h));
+  try{localStorage.setItem(APPLIED_KEY,JSON.stringify(applied));}catch(e){}
+}
+function sameAsApplied(){return chosen.every((h,i)=>h.toLowerCase()===applied.colors[i].toLowerCase())
+  &&+$('warn').value*1000===applied.warn&&+$('alarm').value*1000===applied.alarm;}
+function noteUnsent(){if(!sameAsApplied())$('saveMsg').textContent='Not sent to token yet';
+  else if($('saveMsg').textContent==='Not sent to token yet')$('saveMsg').textContent='';}
+// Colors saved before the palette was trimmed snap to the closest one left.
+function nearest(hex){
+  const rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)), [r,g,b]=rgb(hex);
+  let best=PALETTE[0][1], bd=Infinity;
+  for(const [,h] of PALETTE){const [R,G,B]=rgb(h), d=(r-R)**2+(g-G)**2+(b-B)**2; if(d<bd){bd=d;best=h;}}
+  return best;
+}
+
+let device=null, fullChar=null, cfgChar=null, pollTimer=null, tickTimer=null;
+let full=null, fullAt=0, chosen=[...DEFAULT_COLORS];
+
+const players=$('players');
+for(let n=1;n<=N;n++){
+  const el=document.createElement('div');
+  el.className='player idle'; el.id='card'+n;
+  el.style.setProperty('--pc',`var(--p${n})`);
+  el.innerHTML=`<div class="p-row"><span class="p-name"><span class="swatch"></span>Player ${n}</span>
+    <span class="p-time" id="t${n}">0:00</span></div>
+    <div class="p-bar"><div class="p-fill" id="f${n}"></div></div>
+    <div class="p-stats"><div><i>Turns</i><b id="n${n}">0</b></div>
+    <div><i>Average</i><b id="a${n}">—</b></div><div><i>Longest</i><b id="x${n}">—</b></div>
+    <div><i>Share</i><b id="s${n}">—</b></div></div>`;
+  players.appendChild(el);
+}
+// ---------- who's playing ----------
+const SHOWN_KEY='tt_shown';
+let shown=(()=>{try{const s=JSON.parse(localStorage.getItem(SHOWN_KEY));
+  if(Array.isArray(s)&&s.length)return s.filter(n=>n>=1&&n<=N);}catch(e){}
+  return Array.from({length:N},(_,i)=>i+1);})();
+const isShown=n=>shown.includes(n);
+const tableEl=$('table');
+for(let n=1;n<=N;n++){
+  const b=document.createElement('button');
+  b.type='button'; b.className='pill'; b.dataset.player=n; b.textContent='Player '+n;
+  b.style.setProperty('--pc',`var(--p${n})`);
+  b.addEventListener('click',()=>{
+    if(isShown(n)){if(shown.length<=1)return; shown=shown.filter(x=>x!==n);}
+    else shown=[...shown,n].sort((a,b)=>a-b);
+    try{localStorage.setItem(SHOWN_KEY,JSON.stringify(shown));}catch(e){}
+    markPills(); render(true);
+  });
+  tableEl.appendChild(b);
+}
+function markPills(){tableEl.querySelectorAll('.pill').forEach(b=>
+  b.setAttribute('aria-pressed',String(isShown(+b.dataset.player))));}
+markPills();
+
+// ---------- seat dashboard ----------
+const stage=$('stage'), seats={};
+for(let n=1;n<=N;n++){
+  const s=document.createElement('div');
+  s.className='seat off'; s.style.setProperty('--pc',`var(--p${n})`);
+  s.innerHTML=`<span class="num">${n}</span><span class="lab">Player ${n}</span>`+
+              `<span class="el">0:00</span><span class="turn"><i>turn</i><b>0:00</b></span>`+
+              `<span class="tot"></span>`;
+  stage.appendChild(s); seats[n]=s;
+}
+let lastLayout='';
+// Active player sits in the middle, large. Players after them in seat order
+// fill the right side, players before them the left, like going round a table.
+function layoutStage(cur){
+  const order=[]; for(let n=1;n<=N;n++)if(isShown(n)||n===cur)order.push(n);
+  const W=stage.clientWidth, key=order.join()+'|'+cur+'|'+W;
+  if(key===lastLayout)return; lastLayout=key;
+  const gap=10, A=Math.round(Math.min(140,W*.36)), pos={};
+  const active=cur>=1&&order.includes(cur);
+  if(active){
+    const i=order.indexOf(cur), others=[];
+    for(let k=1;k<order.length;k++)others.push(order[(i+k)%order.length]);
+    const rc=Math.ceil(others.length/2), right=others.slice(0,rc), left=others.slice(rc).reverse();
+    const k=Math.max(1,right.length,left.length);
+    const S=Math.round(Math.max(28,Math.min(60,(((W-A)/2-gap)-(k-1)*8)/k)));
+    pos[cur]={x:W/2,s:A};
+    right.forEach((n,j)=>pos[n]={x:W/2+A/2+gap+S/2+j*(S+8),s:S});
+    left.forEach((n,j)=>pos[n]={x:W/2-A/2-gap-S/2-j*(S+8),s:S});
+  }else{
+    const m=order.length, E=Math.min(72,(W-(m-1)*gap)/m), tot=m*E+(m-1)*gap;
+    order.forEach((n,j)=>pos[n]={x:(W-tot)/2+E/2+j*(E+gap),s:E});
+  }
+  const H=(active?Math.max(A+14,pos[order.find(n=>n!==cur)]?pos[order.find(n=>n!==cur)].s+30:0):Math.max(...order.map(n=>pos[n].s))+30);
+  stage.style.height=H+'px';
+  const cy=(active?A:pos[order[0]].s)/2+2;
+  for(let n=1;n<=N;n++){
+    const s=seats[n], p=pos[n];
+    if(!p){s.classList.add('off');continue;}
+    s.classList.remove('off');
+    Object.assign(s.style,{left:(p.x-p.s/2)+'px',top:(cy-p.s/2)+'px',width:p.s+'px',height:p.s+'px'});
+    s.querySelector('.num').style.fontSize=Math.max(10,Math.round(p.s*.27))+'px';
+    s.querySelector('.el').style.fontSize=Math.round(p.s*.25)+'px';
+    s.querySelector('.turn').style.fontSize=Math.max(11,Math.round(p.s*.12))+'px';
+  }
+}
+function renderStage(cur,el,totals){
+  layoutStage(cur);
+  const warn=applied.warn, alarm=applied.alarm;
+  for(let n=1;n<=N;n++){
+    const s=seats[n], on=n===cur;
+    s.classList.toggle('active',on);
+    s.classList.toggle('dim',cur>=1&&!on);
+    s.classList.toggle('warn',on&&el>warn&&el<=alarm);
+    s.classList.toggle('alarm',on&&el>alarm);
+    // inside: their running total (the active seat shows this turn instead)
+    s.querySelector('.num').textContent=fmt(totals[n-1]||0);
+    if(on){
+      s.querySelector('.el').textContent=fmt(totals[n-1]||0);   // big: their total
+      s.querySelector('.turn b').textContent=fmt(el);           // bottom: this turn
+    }
+    // underneath: who it is (the active seat already says so inside)
+    s.querySelector('.tot').textContent=on?'':`P${n}`;
+  }
+}
+window.addEventListener('resize',()=>{lastLayout='';render(true);});
+
+const cf=$('colorFields');
+for(let n=1;n<=N;n++){
+  const row=document.createElement('div');
+  row.style.marginBottom = n<N?'14px':'0';
+  row.innerHTML=`<label>Player ${n} color</label><div class="palette" data-player="${n}">`+
+    PALETTE.map(([name,hex])=>`<button class="chip" type="button" title="${name}" data-hex="${hex}" style="background:${hex}" aria-pressed="false"></button>`).join('')+`</div>`;
+  cf.appendChild(row);
+}
+cf.addEventListener('click',e=>{
+  const chip=e.target.closest('.chip'); if(!chip)return;
+  const g=chip.parentElement, n=+g.dataset.player;
+  [...g.children].forEach(c=>c.setAttribute('aria-pressed',String(c===chip)));
+  chosen[n-1]=chip.dataset.hex;
+  noteUnsent();
+});
+function markChips(){document.querySelectorAll('.palette').forEach(g=>{
+  const n=+g.dataset.player;
+  [...g.children].forEach(c=>c.setAttribute('aria-pressed',
+    String(c.dataset.hex.toLowerCase()===chosen[n-1].toLowerCase())));});}
+
+const STORE='tt_presets', CURRENT='tt_current';
+const SEED={'Default':{br:120,pulse:82,warn:45,alarm:90,colors:[...DEFAULT_COLORS]},
+            'Catan':{br:120,pulse:82,warn:45,alarm:90,colors:['#ff0000','#ff4600','#40a0ff','#ffffff','#00ff00']},
+            'Arcs':{br:100,pulse:70,warn:120,alarm:240,colors:['#ffb000','#00ff90','#8000ff','#ff0000','#ffffff']}};
+function loadPresets(){try{const r=localStorage.getItem(STORE);if(r)return JSON.parse(r);}catch(e){}return{...SEED};}
+function savePresets(p){try{localStorage.setItem(STORE,JSON.stringify(p));}catch(e){}}
+function currentName(){try{return localStorage.getItem(CURRENT)||'Default';}catch(e){return'Default';}}
+function setCurrentName(n){try{localStorage.setItem(CURRENT,n);}catch(e){}}
+let presets=loadPresets();
+function fillPresetList(){
+  const sel=$('preset'), names=Object.keys(presets).sort((a,b)=>a.localeCompare(b));
+  sel.innerHTML=names.map(n=>`<option>${n}</option>`).join('');
+  const cur=currentName(); sel.value=names.includes(cur)?cur:names[0];
+  $('presetName').value=sel.value; $('presetDel').disabled=names.length<=1;
+}
+function formFromPreset(p){
+  $('br').value=p.br; $('brOut').textContent=p.br;
+  $('pulse').value=p.pulse; $('pulseOut').textContent=p.pulse;
+  $('warn').value=p.warn; $('alarm').value=p.alarm!=null?p.alarm:p.warn*2;
+  chosen=fillColors(p.colors);
+  markChips();
+}
+function presetFromForm(){return{br:+$('br').value,pulse:+$('pulse').value,
+  warn:+$('warn').value,alarm:+$('alarm').value,colors:[...chosen]};}
+$('preset').addEventListener('change',async e=>{
+  const name=e.target.value; setCurrentName(name); $('presetName').value=name;
+  formFromPreset(presets[name]);
+  if(cfgChar){await saveCfg(); $('saveMsg').textContent=`${name} sent to token`;}
+  else noteUnsent();
+});
+$('presetSave').addEventListener('click',()=>{
+  const name=$('presetName').value.trim(); if(!name){$('presetName').focus();return;}
+  presets[name]=presetFromForm(); savePresets(presets); setCurrentName(name); fillPresetList();
+  $('saveMsg').textContent=`Saved "${name}"`; setTimeout(()=>$('saveMsg').textContent='',2500);
+});
+$('presetDel').addEventListener('click',()=>{
+  const name=$('preset').value; if(Object.keys(presets).length<=1)return;
+  delete presets[name]; savePresets(presets);
+  const next=Object.keys(presets)[0]; setCurrentName(next); fillPresetList(); formFromPreset(presets[next]);
+});
+$('br').addEventListener('input',e=>$('brOut').textContent=e.target.value);
+$('pulse').addEventListener('input',e=>$('pulseOut').textContent=e.target.value);
+$('warn').addEventListener('input',noteUnsent);
+$('alarm').addEventListener('input',noteUnsent);
+
+function fmt(ms){const t=Math.max(0,Math.floor(ms/1000));
+  return Math.floor(t/60)+':'+String(t%60).padStart(2,'0');}
+function fmtShort(ms){if(!ms)return'—';const t=Math.round(ms/1000);return t<60?t+'s':fmt(ms);}
+function setStatus(txt,on){$('statusText').textContent=txt;$('dot').classList.toggle('on',!!on);
+  $('connect').disabled=!!on;$('disconnect').disabled=!on;$('save').disabled=!on;}
+
+function render(){
+  for(let n=1;n<=N;n++)$('card'+n).style.display=isShown(n)||(full&&full.cur===n)?'':'none';
+  if(!full){
+    renderStage(0,0,[]);
+    $('status').textContent=device&&device.gatt&&device.gatt.connected?'Connecting…':'Not connected';
+    return;
+  }
+  const drift=performance.now()-fullAt, pl=full.pl;
+  const live=pl.map((p,i)=>p.t+(i+1===full.cur?drift:0));
+  const sum=live.reduce((a,b)=>a+b,0);
+  const cur=full.flt?0:full.cur, el=cur>=1?full.el+drift:0;
+  renderStage(cur,el,live);
+  const st=$('status');
+  if(full.flt){st.style.setProperty('--sc','var(--danger)');st.innerHTML='<b>Contacts shorted</b> · detection paused';}
+  else if(cur>=1){
+    st.style.setProperty('--sc',`var(--p${cur})`);
+    const alarm=applied.alarm, warn=applied.warn;
+    st.innerHTML=`<b>Player ${cur}</b> · `+(el>alarm?'well over time':el>warn?'running long':'their turn');
+  }else{st.style.removeProperty('--sc');st.textContent='Token is off the trays';}
+  $('mRound').textContent=full.rd+1;
+  $('mSession').textContent=fmt(full.ses+drift);
+  $('mPlay').textContent=fmt(sum);
+  $('fault').classList.toggle('show',!!full.flt);
+  live.forEach((v,i)=>{const n=i+1,p=pl[i];
+    $('t'+n).textContent=fmt(v);
+    $('f'+n).style.width=(sum>0?v/sum*100:0)+'%';
+    $('n'+n).textContent=p.n;
+    $('a'+n).textContent=p.n?fmtShort(p.t/p.n):'—';
+    $('x'+n).textContent=fmtShort(p.mx);
+    $('s'+n).textContent=sum>0?Math.round(v/sum*100)+'%':'—';
+    const c=$('card'+n); c.classList.toggle('idle',v===0); c.classList.toggle('active',n===full.cur);});
+  renderRounds(full.rt||[]); renderInsights(pl,live,sum);
+}
+function renderRounds(rt){
+  const w=$('roundsWrap');
+  if(!rt.length){w.innerHTML='<div class="empty">No completed rounds yet. A round finishes when someone who already played this round picks the token up again.</div>';return;}
+  const max=Math.max(...rt), avg=rt.reduce((a,b)=>a+b,0)/rt.length;
+  w.innerHTML='<div class="rounds"><div class="rchart">'+
+    rt.map((v,i)=>`<div class="rbar" style="height:${Math.max(4,v/max*100)}%" title="Round ${i+1}: ${fmt(v)}"></div>`).join('')+
+    `</div><div class="rfoot"><span>Last <b>${fmt(rt[rt.length-1])}</b></span>`+
+    `<span>Average <b>${fmt(avg)}</b></span><span>Longest <b>${fmt(max)}</b></span></div></div>`;
+}
+function renderInsights(plAll,liveAll,sum){
+  const out=[], who=n=>`<b style="color:var(--p${n})">Player ${n}</b>`;
+  // only the players at the table (plus anyone who has actually played)
+  const rows=plAll.map((p,i)=>({n:i+1,p,v:liveAll[i]}))
+                  .filter(r=>isShown(r.n)||r.p.n>0||r.v>0);
+  if(!rows.some(r=>r.p.n>0)){$('insights').innerHTML='<div class="empty">Play a few turns and this fills in.</div>';return;}
+  const top=(f)=>rows.reduce((a,b)=>f(b)>f(a)?b:a);
+  const lead=top(r=>r.v);
+  out.push(['Taking the most time',`${who(lead.n)} &mdash; ${fmt(lead.v)}, ${Math.round(lead.v/sum*100)}% of the game.`]);
+  const avg=r=>r.p.n?r.p.t/r.p.n:0, slow=top(avg);
+  if(avg(slow)>0){const o=rows.filter(r=>r!==slow&&avg(r)>0).map(avg);
+    const rest=o.length?o.reduce((a,b)=>a+b,0)/o.length:0;
+    const pct=rest?Math.round((avg(slow)/rest-1)*100):0;
+    out.push(['Slowest per turn',`${who(slow.n)} averages ${fmtShort(avg(slow))}`+(pct>0?`, ${pct}% longer than everyone else.`:'.')]);}
+  const ap=top(r=>r.p.mx);
+  if(ap.p.mx>0)out.push(['Analysis paralysis trophy',`${who(ap.n)} &mdash; a single turn of ${fmtShort(ap.p.mx)}.`]);
+  let dR=null,dV=0; rows.forEach(r=>{if(r.p.n>=2&&r.p.t){const x=r.p.mx/avg(r);if(x>dV){dV=x;dR=r;}}});
+  if(dR&&dV>=1.6)out.push(['Most erratic',`${who(dR.n)}'s longest turn ran ${dV.toFixed(1)}× their own average.`]);
+  let mR=null,mV=1; rows.forEach(r=>{if(r.p.n>=3&&r.p.l&&r.p.t){const x=r.p.l/avg(r);if(x<mV){mV=x;mR=r;}}});
+  if(mR&&mV<0.7)out.push(['Speeding up',`${who(mR.n)}'s last turn was ${Math.round((1-mV)*100)}% quicker than their average.`]);
+  const rt=full.rt||[];
+  if(rt.length>=4){const h=Math.floor(rt.length/2);
+    const e=rt.slice(0,h).reduce((a,b)=>a+b,0)/h, l=rt.slice(-h).reduce((a,b)=>a+b,0)/h;
+    const pct=Math.round((l/e-1)*100);
+    if(Math.abs(pct)>=10)out.push(['Pace',pct>0?`Rounds are running <b>${pct}% longer</b> than early on. The game is bogging down.`:`Rounds are running <b>${-pct}% shorter</b> than early on.`]);}
+  $('insights').innerHTML=out.map(([l,t])=>`<div class="insight"><i>${l}</i>${t}</div>`).join('');
+}
+
+let reading=false;
+async function readFull(){
+  // One read at a time: notifications and the poll timer can both fire, and an
+  // older reply landing after a newer one would roll the clock back.
+  if(!fullChar||reading)return;
+  reading=true;
+  try{const d=JSON.parse(new TextDecoder().decode(await fullChar.readValue()));
+      // v4 firmware sends each player as [total,count,longest,shortest,last];
+      // older firmware sent objects. Normalise to objects and pad to N players.
+      const pl=(d.pl||[]).map(p=>Array.isArray(p)?{t:p[0],n:p[1],mx:p[2],mn:p[3],l:p[4]}:p);
+      while(pl.length<N)pl.push({t:0,n:0,mx:0,mn:0,l:0});
+      d.pl=pl.slice(0,N);
+      // The token only refreshes this value once a second, so a read can return
+      // a snapshot up to ~1s old. Never let the clock run backwards: if the new
+      // snapshot is slightly behind where we've already counted to, treat it as
+      // that much older. The session clock is the reference because it never
+      // pauses; turn timer and totals share the same offset.
+      const now=performance.now();
+      let at=now;
+      if(full){
+        const predicted=full.ses+(now-fullAt), behind=predicted-d.ses;
+        if(behind>0&&behind<2500)at=now-behind;     // stale snapshot: backdate it
+      }
+      full=d; fullAt=at; $('err').textContent=''; render();
+  }catch(e){}
+  finally{reading=false;}
+}
+async function loadCfg(){
+  if(!cfgChar)return;
+  try{const c=JSON.parse(new TextDecoder().decode(await cfgChar.readValue()));
+    $('br').value=c.br;$('brOut').textContent=c.br;
+    $('pulse').value=c.pulse;$('pulseOut').textContent=c.pulse;
+    $('warn').value=Math.round(c.warn/1000);$('alarm').value=Math.round(c.alarm/1000);
+    for(let i=1;i<=N;i++){if(c['c'+i]==null)continue;
+      chosen[i-1]=nearest('#'+(c['c'+i]>>>0).toString(16).padStart(6,'0'));}
+    markChips();
+    // what the token reports is what it's running
+    apply({colors:[...chosen],warn:c.warn,alarm:c.alarm});}catch(e){}
+}
+async function saveCfg(){
+  if(!cfgChar)return;
+  const body={br:+$('br').value,pulse:+$('pulse').value,warn:+$('warn').value*1000,
+              alarm:+$('alarm').value*1000};
+  for(let i=1;i<=N;i++)body['c'+i]=parseInt(chosen[i-1].slice(1),16);
+  try{await cfgChar.writeValue(new TextEncoder().encode(JSON.stringify(body)));
+    apply({colors:[...chosen],warn:body.warn,alarm:body.alarm});   // now it's on the token
+    $('saveMsg').textContent='Saved';setTimeout(()=>{if($('saveMsg').textContent==='Saved')$('saveMsg').textContent='';},2500);}
+  catch(e){$('saveMsg').textContent='Failed: '+e.message;}
+}
+
+async function connect(){
+  $('err').textContent='';
+  if(!navigator.bluetooth){
+    $('err').textContent='This browser has no Web Bluetooth. On a Mac use Chrome or Edge; on iPhone use Bluefy. If you are on Chrome and still see this, the page may be opened as a local file — serve it over http://localhost instead.';
+    return;}
+  try{
+    setStatus('Choosing device…',false);
+    device=await navigator.bluetooth.requestDevice({
+      filters:[{services:[SERVICE_UUID]}], optionalServices:[SERVICE_UUID]});
+    device.addEventListener('gattserverdisconnected',cleanup);
+    setStatus('Connecting…',false);
+    const server=await device.gatt.connect();
+    const service=await server.getPrimaryService(SERVICE_UUID);
+    fullChar=await service.getCharacteristic(CHAR_FULL);
+    try{cfgChar=await service.getCharacteristic(CHAR_CFG);}catch(e){cfgChar=null;}
+    try{const lc=await service.getCharacteristic(CHAR_LIVE);
+        await lc.startNotifications();
+        lc.addEventListener('characteristicvaluechanged',readFull);}catch(e){}
+    await readFull(); await loadCfg();
+    const cur=currentName();
+    if(presets[cur]){formFromPreset(presets[cur]); await saveCfg();}
+    pollTimer=setInterval(readFull,2000); tickTimer=setInterval(render,250);
+    setStatus('Connected to '+(device.name||'token'),true);
+  }catch(e){
+    setStatus('Not connected',false);
+    if(e.name!=='NotFoundError')$('err').textContent=e.message;
+  }
+}
+function cleanup(){clearInterval(pollTimer);clearInterval(tickTimer);
+  pollTimer=tickTimer=null;fullChar=cfgChar=null;full=null;setStatus('Token disconnected',false);render();}
+function disconnect(){if(device&&device.gatt.connected)device.gatt.disconnect();cleanup();}
+$('connect').addEventListener('click',connect);
+$('disconnect').addEventListener('click',disconnect);
+$('save').addEventListener('click',saveCfg);
+renderRounds([]);
+$('insights').innerHTML='<div class="empty">Play a few turns and this fills in.</div>';
+fillPresetList(); formFromPreset(presets[currentName()]||Object.values(presets)[0]);
+apply({});   // dashboard starts with what the token was last running
+render();
+</script>
+</body>
+</html>
