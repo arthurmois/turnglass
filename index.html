@@ -28,7 +28,9 @@
   .conn{display:flex;align-items:center;gap:7px;margin-top:3px}
   .dot{width:6px;height:6px;border-radius:50%;background:var(--ink-3);flex:none}
   .dot.on{background:#3f9142;box-shadow:0 0 0 3px rgba(63,145,66,.16)}
-  .conn span{font-size:12.5px;color:var(--ink-2)}
+  .conn span{font-size:12.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .brand{min-width:0}
+  .hidden{display:none !important}
   button{font:inherit;font-size:14px;font-weight:500;padding:9px 16px;border-radius:9px;
          border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;
          white-space:nowrap;transition:border-color .15s,background .15s,opacity .15s}
@@ -54,6 +56,7 @@
                    opacity .4s,border-color .4s,background .4s}
   .seat.dim{opacity:.72}
   .seat.off{opacity:0;pointer-events:none;animation:none}
+  .stage.snap,.stage.snap .seat,.stage.snap .seat .num{transition:none}
   .seat .num{font-weight:500;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em;
              color:color-mix(in srgb,var(--pc) 70%,var(--ink));
              transition:font-size .6s cubic-bezier(.3,0,.2,1)}
@@ -102,11 +105,11 @@
   .status b{font-weight:600;color:color-mix(in srgb,var(--sc,var(--ink)) 75%,var(--ink))}
 
   /* ---- who's playing toggles ---- */
-  .table{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 24px 2px}
-  .table span{font-size:10.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
-              color:var(--ink-3);margin-right:4px}
-  .pill{display:inline-flex;align-items:center;gap:6px;padding:6px 11px 6px 9px;border-radius:999px;
-        font-size:13px;background:var(--surface)}
+  .table{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:0 0 26px}
+  .table span{grid-column:1/-1;font-size:10.5px;font-weight:600;letter-spacing:.09em;
+              text-transform:uppercase;color:var(--ink-3);margin:0 0 2px 2px}
+  .pill{display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 0;
+        border-radius:999px;font-size:14px;background:var(--surface);min-width:0}
   .pill::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--pc);
                 transition:opacity .2s}
   .pill[aria-pressed="true"]{border-color:var(--pc);
@@ -169,23 +172,26 @@
   input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:17px;height:17px;
     border-radius:50%;background:var(--accent);cursor:pointer;border:3px solid var(--surface);
     box-shadow:0 0 0 1px var(--line)}
-  input[type=number]{font:inherit;font-size:13.5px;width:74px;padding:6px 9px;text-align:right;
+  input[type=number]{font:inherit;font-size:16px;width:74px;padding:6px 9px;text-align:right;
     border:1px solid var(--line);border-radius:8px;background:var(--raised);color:var(--ink);
     font-variant-numeric:tabular-nums}
-  .palette{display:grid;grid-template-columns:repeat(7,23px);gap:7px;margin-top:10px}
-  .chip{width:23px;height:23px;border-radius:50%;cursor:pointer;border:2px solid transparent;
+  /* 7 per row, spread across the full width so the rows don't hug the left edge */
+  .palette{display:grid;grid-template-columns:repeat(7,1fr);gap:10px 0;margin-top:12px;
+           justify-items:center;max-width:360px}
+  .chip{width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;
         padding:0;background-clip:padding-box;transition:transform .12s}
   .chip:hover{transform:scale(1.12)}
   .chip[data-hex="#ffffff"]{box-shadow:inset 0 0 0 1px var(--ink-3)}
   .chip[aria-pressed="true"]{box-shadow:0 0 0 2px var(--surface),0 0 0 4px var(--ink)}
   .chip[data-hex="#ffffff"][aria-pressed="true"]{
     box-shadow:inset 0 0 0 1px var(--ink-3),0 0 0 2px var(--surface),0 0 0 4px var(--ink)}
-  .preset{padding:13px 0 14px}
+  .preset{padding:2px 0 14px}
   .preset-row{display:flex;gap:8px;margin-top:10px}
-  select,.preset input[type=text]{font:inherit;font-size:13.5px;padding:7px 9px;
+  /* 16px stops iPhone browsers zooming the page when a field is tapped */
+  select,.preset input[type=text]{font:inherit;font-size:16px;padding:7px 9px;
     border:1px solid var(--line);border-radius:8px;background:var(--raised);color:var(--ink);min-width:0}
   select,.preset input[type=text]{flex:1}
-  .preset button{padding:7px 12px;font-size:13px}
+  .preset button{padding:7px 0;font-size:14px;width:82px;flex:none}
   .savebar{display:flex;align-items:center;gap:12px;padding:14px 0;border-top:1px solid var(--hair)}
   .savebar span{font-size:12.5px;color:var(--ink-2)}
   .note{font-size:12.5px;color:var(--ink-3);line-height:1.5;margin:22px 2px 0}
@@ -199,9 +205,9 @@
       <h1>Turnglass</h1>
       <div class="conn"><span class="dot" id="dot"></span><span id="statusText">Not connected</span></div>
     </div>
-    <div>
+    <div style="flex:none">
       <button id="connect" class="primary">Connect</button>
-      <button id="disconnect" disabled>Disconnect</button>
+      <button id="disconnect" class="hidden">Disconnect</button>
     </div>
   </header>
 
@@ -344,7 +350,8 @@ const isShown=n=>shown.includes(n);
 const tableEl=$('table');
 for(let n=1;n<=N;n++){
   const b=document.createElement('button');
-  b.type='button'; b.className='pill'; b.dataset.player=n; b.textContent='Player '+n;
+  b.type='button'; b.className='pill'; b.dataset.player=n; b.textContent='P'+n;
+  b.setAttribute('aria-label','Player '+n);
   b.style.setProperty('--pc',`var(--p${n})`);
   b.addEventListener('click',()=>{
     if(isShown(n)){if(shown.length<=1)return; shown=shown.filter(x=>x!==n);}
@@ -374,7 +381,11 @@ let lastLayout='';
 function layoutStage(cur){
   const order=[]; for(let n=1;n<=N;n++)if(isShown(n)||n===cur)order.push(n);
   const W=stage.clientWidth, key=order.join()+'|'+cur+'|'+W;
-  if(key===lastLayout)return; lastLayout=key;
+  if(key===lastLayout)return;
+  // first placement (and resizes) snap into place instead of sliding in from the corner
+  const snap=!lastLayout||lastLayout.split('|')[2]!==String(W);
+  lastLayout=key;
+  if(snap){stage.classList.add('snap');requestAnimationFrame(()=>requestAnimationFrame(()=>stage.classList.remove('snap')));}
   const gap=10, A=Math.round(Math.min(140,W*.36)), pos={};
   const active=cur>=1&&order.includes(cur);
   if(active){
@@ -387,8 +398,8 @@ function layoutStage(cur){
     right.forEach((n,j)=>pos[n]={x:W/2+A/2+gap+S/2+j*(S+8),s:S});
     left.forEach((n,j)=>pos[n]={x:W/2-A/2-gap-S/2-j*(S+8),s:S});
   }else{
-    const m=order.length, E=Math.min(72,(W-(m-1)*gap)/m), tot=m*E+(m-1)*gap;
-    order.forEach((n,j)=>pos[n]={x:(W-tot)/2+E/2+j*(E+gap),s:E});
+    const g2=m=>m>=5?14:gap, m=order.length, G=g2(m), E=Math.min(64,(W-(m-1)*G-8)/m), tot=m*E+(m-1)*G;
+    order.forEach((n,j)=>pos[n]={x:(W-tot)/2+E/2+j*(E+G),s:E});
   }
   const H=(active?Math.max(A+14,pos[order.find(n=>n!==cur)]?pos[order.find(n=>n!==cur)].s+30:0):Math.max(...order.map(n=>pos[n].s))+30);
   stage.style.height=H+'px';
@@ -492,8 +503,10 @@ $('alarm').addEventListener('input',noteUnsent);
 function fmt(ms){const t=Math.max(0,Math.floor(ms/1000));
   return Math.floor(t/60)+':'+String(t%60).padStart(2,'0');}
 function fmtShort(ms){if(!ms)return'—';const t=Math.round(ms/1000);return t<60?t+'s':fmt(ms);}
-function setStatus(txt,on){$('statusText').textContent=txt;$('dot').classList.toggle('on',!!on);
-  $('connect').disabled=!!on;$('disconnect').disabled=!on;$('save').disabled=!on;}
+// Only one button shows at a time: Connect when idle, Disconnect when connected.
+function setStatus(txt,on,busy){$('statusText').textContent=txt;$('dot').classList.toggle('on',!!on);
+  $('connect').classList.toggle('hidden',!!on);$('connect').disabled=!!busy;
+  $('disconnect').classList.toggle('hidden',!on);$('save').disabled=!on;}
 
 function render(){
   for(let n=1;n<=N;n++)$('card'+n).style.display=isShown(n)||(full&&full.cur===n)?'':'none';
@@ -621,11 +634,11 @@ async function connect(){
     $('err').textContent='This browser has no Web Bluetooth. On a Mac use Chrome or Edge; on iPhone use Bluefy. If you are on Chrome and still see this, the page may be opened as a local file — serve it over http://localhost instead.';
     return;}
   try{
-    setStatus('Choosing device…',false);
+    setStatus('Choosing device…',false,true);
     device=await navigator.bluetooth.requestDevice({
       filters:[{services:[SERVICE_UUID]}], optionalServices:[SERVICE_UUID]});
     device.addEventListener('gattserverdisconnected',cleanup);
-    setStatus('Connecting…',false);
+    setStatus('Connecting…',false,true);
     const server=await device.gatt.connect();
     const service=await server.getPrimaryService(SERVICE_UUID);
     fullChar=await service.getCharacteristic(CHAR_FULL);
@@ -637,7 +650,7 @@ async function connect(){
     const cur=currentName();
     if(presets[cur]){formFromPreset(presets[cur]); await saveCfg();}
     pollTimer=setInterval(readFull,2000); tickTimer=setInterval(render,250);
-    setStatus('Connected to '+(device.name||'token'),true);
+    setStatus('Connected',true);
   }catch(e){
     setStatus('Not connected',false);
     if(e.name!=='NotFoundError')$('err').textContent=e.message;
