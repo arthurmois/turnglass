@@ -72,7 +72,9 @@
              color:color-mix(in srgb,var(--pc) 70%,var(--ink));margin-bottom:3px}
   .seat .el{font-weight:300;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
   .seat .tot{position:absolute;top:calc(100% + 7px);left:50%;transform:translateX(-50%);
-             font-size:11.5px;color:var(--ink-3);white-space:nowrap;font-variant-numeric:tabular-nums}
+             font-size:11.5px;color:var(--ink-3);white-space:nowrap;font-variant-numeric:tabular-nums;
+             overflow:hidden;text-overflow:ellipsis;text-align:center}
+  .seat.active .lab{max-width:80%;overflow:hidden;text-overflow:ellipsis}
   .seat.active{border-width:3px;border-color:var(--pc);opacity:1;
                background:color-mix(in srgb,var(--pc) 22%,var(--surface));
                animation:breathe 2.2s ease-in-out infinite}
@@ -105,12 +107,14 @@
   .status b{font-weight:600;color:color-mix(in srgb,var(--sc,var(--ink)) 75%,var(--ink))}
 
   /* ---- who's playing toggles ---- */
-  .table{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:0 0 26px}
-  .table span{grid-column:1/-1;font-size:10.5px;font-weight:600;letter-spacing:.09em;
+  /* pills stretch to fill each row: P1-P5 fit on one line, longer names wrap evenly */
+  .table{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 26px}
+  .table>span{flex:0 0 100%;font-size:10.5px;font-weight:600;letter-spacing:.09em;
               text-transform:uppercase;color:var(--ink-3);margin:0 0 2px 2px}
-  .pill{display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 0;
-        border-radius:999px;font-size:14px;background:var(--surface);min-width:0}
-  .pill::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--pc);
+  .pill{flex:1 1 auto;min-width:56px;max-width:100%;display:flex;align-items:center;justify-content:center;
+        gap:6px;padding:8px 12px;border-radius:999px;font-size:14px;background:var(--surface)}
+  .pill span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pill::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--pc);flex:none;
                 transition:opacity .2s}
   .pill[aria-pressed="true"]{border-color:var(--pc);
         background:color-mix(in srgb,var(--pc) 10%,var(--surface))}
@@ -130,7 +134,17 @@
   .player.idle{opacity:.45}
   .player.active{border-color:var(--pc)}
   .p-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
-  .p-name{font-weight:600;font-size:14.5px;display:flex;align-items:center;gap:8px}
+  .p-name{font-weight:600;font-size:14.5px;display:flex;align-items:center;gap:8px;min-width:0;cursor:text}
+  /* looks like plain text until tapped; 16px so iPhones don't zoom in */
+  .p-nameinput{font:inherit;font-size:16px;font-weight:600;color:var(--ink);background:transparent;
+    border:0;border-bottom:1px dashed transparent;border-radius:0;padding:1px 0;margin:0;min-width:0;
+    max-width:100%;outline:none;transition:border-color .15s}
+  .p-nameinput::placeholder{color:var(--ink);opacity:1}
+  .p-nameinput:focus{border-bottom-color:var(--pc)}
+  .p-nameinput:focus::placeholder{color:var(--ink-3)}
+  .pencil{width:13px;height:13px;color:var(--ink-3);flex:none;opacity:.7;transition:opacity .15s}
+  .p-name:focus-within .pencil{opacity:0}
+  .player.idle:focus-within{opacity:1}
   .swatch{width:9px;height:9px;border-radius:50%;background:var(--pc);flex:none}
   .p-time{font-size:22px;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
   .p-bar{height:4px;border-radius:2px;background:var(--hair);margin-top:11px;overflow:hidden}
@@ -328,18 +342,56 @@ function nearest(hex){
 let device=null, fullChar=null, cfgChar=null, pollTimer=null, tickTimer=null;
 let full=null, fullAt=0, chosen=[...DEFAULT_COLORS];
 
+// ---------- player names ----------
+// Kept in this browser only; the token just knows tray numbers.
+const NAMES_KEY='tt_names', NAME_MAX=14;
+let names=(()=>{try{const a=JSON.parse(localStorage.getItem(NAMES_KEY));
+  if(Array.isArray(a))return Array.from({length:N},(_,i)=>String(a[i]||'').slice(0,NAME_MAX));}catch(e){}
+  return Array(N).fill('');})();
+const esc=s=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const nameOf=n=>names[n-1]||`Player ${n}`;     // full label
+const shortOf=n=>names[n-1]||`P${n}`;          // for tight spots
+function saveNames(){try{localStorage.setItem(NAMES_KEY,JSON.stringify(names));}catch(e){}}
+// Size the box to the text itself so the pencil sits right after the name.
+const measureCtx=document.createElement('canvas').getContext('2d');
+function sizeNameInput(inp){
+  const cs=getComputedStyle(inp);
+  measureCtx.font=`${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  inp.style.width=Math.ceil(measureCtx.measureText(inp.value||inp.placeholder).width)+4+'px';
+}
+// Push the current names into every label that isn't redrawn by render().
+function applyNames(){
+  for(let n=1;n<=N;n++){
+    const inp=$('nm'+n); if(inp&&document.activeElement!==inp){inp.value=names[n-1];sizeNameInput(inp);}
+    const pill=document.querySelector(`.pill[data-player="${n}"]`);
+    if(pill){pill.querySelector('span').textContent=shortOf(n);pill.setAttribute('aria-label',nameOf(n));}
+    if(typeof seats!=='undefined'&&seats[n])seats[n].querySelector('.lab').textContent=nameOf(n);
+    const cl=$('cl'+n); if(cl)cl.textContent=nameOf(n)+' color';
+  }
+}
+
 const players=$('players');
 for(let n=1;n<=N;n++){
   const el=document.createElement('div');
   el.className='player idle'; el.id='card'+n;
   el.style.setProperty('--pc',`var(--p${n})`);
-  el.innerHTML=`<div class="p-row"><span class="p-name"><span class="swatch"></span>Player ${n}</span>
+  el.innerHTML=`<div class="p-row"><label class="p-name"><span class="swatch"></span>`+
+    `<input class="p-nameinput" id="nm${n}" maxlength="${NAME_MAX}" placeholder="Player ${n}" `+
+    `autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="done" aria-label="Name for player ${n}">`+
+    `<svg class="pencil" viewBox="0 0 16 16" aria-hidden="true"><path d="M11.3 2.3a1.5 1.5 0 0 1 2.1 2.1l-8 8-2.9.8.8-2.9z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></label>
     <span class="p-time" id="t${n}">0:00</span></div>
     <div class="p-bar"><div class="p-fill" id="f${n}"></div></div>
     <div class="p-stats"><div><i>Turns</i><b id="n${n}">0</b></div>
     <div><i>Average</i><b id="a${n}">—</b></div><div><i>Longest</i><b id="x${n}">—</b></div>
     <div><i>Share</i><b id="s${n}">—</b></div></div>`;
   players.appendChild(el);
+  const inp=el.querySelector('input');
+  inp.addEventListener('input',()=>{
+    names[n-1]=inp.value.trim().slice(0,NAME_MAX); saveNames(); sizeNameInput(inp);
+    applyNames(); render(true);
+  });
+  inp.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key==='Escape')inp.blur();});
+  inp.addEventListener('blur',()=>{inp.value=names[n-1];sizeNameInput(inp);});
 }
 // ---------- who's playing ----------
 const SHOWN_KEY='tt_shown';
@@ -350,8 +402,8 @@ const isShown=n=>shown.includes(n);
 const tableEl=$('table');
 for(let n=1;n<=N;n++){
   const b=document.createElement('button');
-  b.type='button'; b.className='pill'; b.dataset.player=n; b.textContent='P'+n;
-  b.setAttribute('aria-label','Player '+n);
+  b.type='button'; b.className='pill'; b.dataset.player=n;
+  b.innerHTML='<span></span>';
   b.style.setProperty('--pc',`var(--p${n})`);
   b.addEventListener('click',()=>{
     if(isShown(n)){if(shown.length<=1)return; shown=shown.filter(x=>x!==n);}
@@ -370,7 +422,7 @@ const stage=$('stage'), seats={};
 for(let n=1;n<=N;n++){
   const s=document.createElement('div');
   s.className='seat off'; s.style.setProperty('--pc',`var(--p${n})`);
-  s.innerHTML=`<span class="num">${n}</span><span class="lab">Player ${n}</span>`+
+  s.innerHTML=`<span class="num">${n}</span><span class="lab"></span>`+
               `<span class="el">0:00</span><span class="turn"><i>turn</i><b>0:00</b></span>`+
               `<span class="tot"></span>`;
   stage.appendChild(s); seats[n]=s;
@@ -430,7 +482,9 @@ function renderStage(cur,el,totals){
       s.querySelector('.turn b').textContent=fmt(el);           // bottom: this turn
     }
     // underneath: who it is (the active seat already says so inside)
-    s.querySelector('.tot').textContent=on?'':`P${n}`;
+    const t=s.querySelector('.tot');
+    t.textContent=on?'':shortOf(n);
+    t.style.maxWidth=(parseFloat(s.style.width)||60)+16+'px';
   }
 }
 window.addEventListener('resize',()=>{lastLayout='';render(true);});
@@ -439,7 +493,7 @@ const cf=$('colorFields');
 for(let n=1;n<=N;n++){
   const row=document.createElement('div');
   row.style.marginBottom = n<N?'14px':'0';
-  row.innerHTML=`<label>Player ${n} color</label><div class="palette" data-player="${n}">`+
+  row.innerHTML=`<label id="cl${n}">Player ${n} color</label><div class="palette" data-player="${n}">`+
     PALETTE.map(([name,hex])=>`<button class="chip" type="button" title="${name}" data-hex="${hex}" style="background:${hex}" aria-pressed="false"></button>`).join('')+`</div>`;
   cf.appendChild(row);
 }
@@ -525,7 +579,7 @@ function render(){
   else if(cur>=1){
     st.style.setProperty('--sc',`var(--p${cur})`);
     const alarm=applied.alarm, warn=applied.warn;
-    st.innerHTML=`<b>Player ${cur}</b> · `+(el>alarm?'well over time':el>warn?'running long':'their turn');
+    st.innerHTML=`<b>${esc(nameOf(cur))}</b> · `+(el>alarm?'well over time':el>warn?'running long':'their turn');
   }else{st.style.removeProperty('--sc');st.textContent='Token is off the trays';}
   $('mRound').textContent=full.rd+1;
   $('mSession').textContent=fmt(full.ses+drift);
@@ -551,7 +605,7 @@ function renderRounds(rt){
     `<span>Average <b>${fmt(avg)}</b></span><span>Longest <b>${fmt(max)}</b></span></div></div>`;
 }
 function renderInsights(plAll,liveAll,sum){
-  const out=[], who=n=>`<b style="color:var(--p${n})">Player ${n}</b>`;
+  const out=[], who=n=>`<b style="color:var(--p${n})">${esc(nameOf(n))}</b>`;
   // only the players at the table (plus anyone who has actually played)
   const rows=plAll.map((p,i)=>({n:i+1,p,v:liveAll[i]}))
                   .filter(r=>isShown(r.n)||r.p.n>0||r.v>0);
@@ -666,6 +720,7 @@ renderRounds([]);
 $('insights').innerHTML='<div class="empty">Play a few turns and this fills in.</div>';
 fillPresetList(); formFromPreset(presets[currentName()]||Object.values(presets)[0]);
 apply({});   // dashboard starts with what the token was last running
+applyNames();
 render();
 </script>
 </body>
