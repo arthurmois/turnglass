@@ -179,6 +179,8 @@
   .field-top{display:flex;align-items:center;justify-content:space-between;gap:14px}
   .field label{font-size:13.5px;color:var(--ink)}
   .field .hint{font-size:11.5px;color:var(--ink-3);margin-top:3px}
+  .field .hint.sync:empty{display:none}
+  .field .hint.sync.bad{color:var(--danger)}
   .field output{font-size:13px;color:var(--ink-2);font-variant-numeric:tabular-nums;
                 min-width:46px;text-align:right}
   input[type=range]{-webkit-appearance:none;appearance:none;width:100%;margin-top:11px;height:3px;
@@ -250,6 +252,7 @@
       <div class="field preset" style="border-top:none">
         <label for="preset">Game</label>
         <div class="hint">Each game keeps its own colors and timing.</div>
+        <div class="hint sync" id="syncNote"></div>
         <div class="preset-row">
           <select id="preset"></select>
           <button type="button" id="presetDel">Delete</button>
@@ -296,6 +299,7 @@ const SERVICE_UUID='12345678-1234-1234-1234-1234567890ab';
 const CHAR_LIVE   ='12345678-1234-1234-1234-1234567890ac';
 const CHAR_FULL   ='12345678-1234-1234-1234-1234567890ad';
 const CHAR_CFG    ='12345678-1234-1234-1234-1234567890ae';
+const CHAR_APP    ='12345678-1234-1234-1234-1234567890af';   // app settings stored on the token
 const N=5, $=id=>document.getElementById(id);
 // Matches the firmware defaults; also used to fill presets saved with fewer players.
 const DEFAULT_COLORS=['#ff0000','#ffb000','#00ff00','#0000ff','#8000ff'];
@@ -339,7 +343,12 @@ function nearest(hex){
   return best;
 }
 
-let device=null, fullChar=null, cfgChar=null, pollTimer=null, tickTimer=null;
+let device=null, fullChar=null, cfgChar=null, appChar=null, pollTimer=null, tickTimer=null;
+// Web Bluetooth allows one operation at a time per connection; queue them so
+// polling, settings and storage never trip over each other.
+let gattQ=Promise.resolve();
+function gatt(fn){const p=gattQ.then(fn,fn); gattQ=p.catch(()=>{}); return p;}
+const bleWrite=(c,v)=>c.writeValueWithResponse?c.writeValueWithResponse(v):c.writeValue(v);
 let full=null, fullAt=0, chosen=[...DEFAULT_COLORS];
 
 // ---------- player names ----------
@@ -387,7 +396,7 @@ for(let n=1;n<=N;n++){
   players.appendChild(el);
   const inp=el.querySelector('input');
   inp.addEventListener('input',()=>{
-    names[n-1]=inp.value.trim().slice(0,NAME_MAX); saveNames(); sizeNameInput(inp);
+    names[n-1]=inp.value.trim().slice(0,NAME_MAX); saveNames(); sizeNameInput(inp); touch();
     applyNames(); render(true);
   });
   inp.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key==='Escape')inp.blur();});
@@ -409,6 +418,7 @@ for(let n=1;n<=N;n++){
     if(isShown(n)){if(shown.length<=1)return; shown=shown.filter(x=>x!==n);}
     else shown=[...shown,n].sort((a,b)=>a-b);
     try{localStorage.setItem(SHOWN_KEY,JSON.stringify(shown));}catch(e){}
+    touch();
     markPills(); render(true);
   });
   tableEl.appendChild(b);
@@ -535,20 +545,100 @@ function presetFromForm(){return{br:+$('br').value,pulse:+$('pulse').value,
   warn:+$('warn').value,alarm:+$('alarm').value,colors:[...chosen]};}
 $('preset').addEventListener('change',async e=>{
   const name=e.target.value; setCurrentName(name); $('presetName').value=name;
-  formFromPreset(presets[name]);
+  formFromPreset(presets[name]); touch();
   if(cfgChar){await saveCfg(); $('saveMsg').textContent=`${name} sent to token`;}
   else noteUnsent();
 });
 $('presetSave').addEventListener('click',()=>{
   const name=$('presetName').value.trim(); if(!name){$('presetName').focus();return;}
-  presets[name]=presetFromForm(); savePresets(presets); setCurrentName(name); fillPresetList();
+  presets[name]=presetFromForm(); savePresets(presets); setCurrentName(name); fillPresetList(); touch();
   $('saveMsg').textContent=`Saved "${name}"`; setTimeout(()=>$('saveMsg').textContent='',2500);
 });
 $('presetDel').addEventListener('click',()=>{
   const name=$('preset').value; if(Object.keys(presets).length<=1)return;
   delete presets[name]; savePresets(presets);
   const next=Object.keys(presets)[0]; setCurrentName(next); fillPresetList(); formFromPreset(presets[next]);
+  touch();
 });
+
+// ---------- app settings stored on the token ----------
+// Names, who's playing and saved game setups live on the token (firmware
+// v3.1+), so they survive browser reloads and follow the token to any phone.
+// The browser keeps a copy for showing things before connecting. Each change
+// is stamped with a time; on connect the newer copy wins.
+const STAMP_KEY='tt_stamp', APP_MAX=3000, APP_CHUNK=100;
+let stamp=(()=>{try{return +localStorage.getItem(STAMP_KEY)||0;}catch(e){return 0;}})();
+let syncTimer=null;
+function saveStamp(){try{localStorage.setItem(STAMP_KEY,String(stamp));}catch(e){}}
+function syncNote(t,bad){const el=$('syncNote');el.textContent=t;el.classList.toggle('bad',!!bad);}
+function touch(){stamp=Date.now(); saveStamp(); scheduleSync();}
+function scheduleSync(){
+  clearTimeout(syncTimer);
+  if(appChar){syncNote('Saving to token…');syncTimer=setTimeout(()=>pushAppState().catch(()=>{}),1200);}
+}
+function appState(){
+  const p={};
+  for(const [k,v] of Object.entries(presets))
+    p[k]=[v.br,v.pulse,v.warn,v.alarm,fillColors(v.colors).map(h=>h.slice(1)).join('')];
+  return {v:1,u:stamp,n:names,s:shown,c:currentName(),p};
+}
+function applyAppState(t){
+  if(Array.isArray(t.n)){names=Array.from({length:N},(_,i)=>String(t.n[i]||'').slice(0,NAME_MAX));saveNames();}
+  if(Array.isArray(t.s)){const s=t.s.map(Number).filter(n=>n>=1&&n<=N);
+    if(s.length){shown=s;try{localStorage.setItem(SHOWN_KEY,JSON.stringify(shown));}catch(e){}}}
+  if(t.p&&typeof t.p==='object'){
+    const p={};
+    for(const [k,v] of Object.entries(t.p))if(Array.isArray(v)&&v.length>=5)
+      p[k]={br:+v[0],pulse:+v[1],warn:+v[2],alarm:+v[3],colors:fillColors((String(v[4]).match(/[0-9a-f]{6}/gi)||[]).map(h=>'#'+h.toLowerCase()))};
+    if(Object.keys(p).length){presets=p;savePresets(presets);}
+  }
+  if(typeof t.c==='string')setCurrentName(t.c);
+  stamp=+t.u||stamp; saveStamp();
+  markPills(); applyNames(); fillPresetList(); render(true);
+}
+async function pushAppState(){
+  if(!appChar)return;
+  const bytes=new TextEncoder().encode(JSON.stringify(appState()));
+  if(bytes.length>APP_MAX){syncNote('Too much to store on the token. Delete a saved game or two.',true);return;}
+  try{
+    const reply=await gatt(async()=>{
+      for(let o=0;o<bytes.length;o+=APP_CHUNK){
+        const part=bytes.subarray(o,o+APP_CHUNK), msg=new Uint8Array(part.length+1);
+        msg[0]=o===0?83:65; msg.set(part,1);              // 'S' first chunk, then 'A'
+        await bleWrite(appChar,msg);
+      }
+      await bleWrite(appChar,new Uint8Array([67]));        // 'C' commit
+      return new TextDecoder().decode(await appChar.readValue());
+    });
+    if(!reply.startsWith('OK'))throw new Error(reply||'no reply');
+    syncNote('Saved on the token');
+  }catch(e){syncNote('Couldn\'t save to token: '+e.message,true);throw e;}
+}
+async function readAppState(){
+  return gatt(async()=>{
+    const enc=new TextEncoder();
+    await bleWrite(appChar,enc.encode('I'));
+    const total=parseInt(new TextDecoder().decode(await appChar.readValue()),10)||0;
+    if(!total)return null;
+    const all=new Uint8Array(total); let got=0;
+    while(got<total){
+      await bleWrite(appChar,enc.encode('R'+got));
+      const dv=await appChar.readValue();
+      const page=new Uint8Array(dv.buffer,dv.byteOffset,dv.byteLength);
+      if(!page.length)break;
+      all.set(page.subarray(0,total-got),got); got+=page.length;
+    }
+    return JSON.parse(new TextDecoder().decode(all.subarray(0,got)));
+  });
+}
+async function syncOnConnect(){
+  if(!appChar){syncNote('Update the token\'s firmware to keep names and players on it.',true);return;}
+  try{
+    const t=await readAppState();
+    if(t&&(+t.u||0)>=stamp){applyAppState(t);syncNote('Loaded from the token');}
+    else await pushAppState();      // token is empty or has older settings
+  }catch(e){syncNote('Couldn\'t read settings from the token: '+e.message,true);}
+}
 $('br').addEventListener('input',e=>$('brOut').textContent=e.target.value);
 $('pulse').addEventListener('input',e=>$('pulseOut').textContent=e.target.value);
 $('warn').addEventListener('input',noteUnsent);
@@ -638,7 +728,8 @@ async function readFull(){
   // older reply landing after a newer one would roll the clock back.
   if(!fullChar||reading)return;
   reading=true;
-  try{const d=JSON.parse(new TextDecoder().decode(await fullChar.readValue()));
+  const fc=fullChar;
+  try{const d=JSON.parse(new TextDecoder().decode(await gatt(()=>fc.readValue())));
       // v4 firmware sends each player as [total,count,longest,shortest,last];
       // older firmware sent objects. Normalise to objects and pad to N players.
       const pl=(d.pl||[]).map(p=>Array.isArray(p)?{t:p[0],n:p[1],mx:p[2],mn:p[3],l:p[4]}:p);
@@ -661,7 +752,8 @@ async function readFull(){
 }
 async function loadCfg(){
   if(!cfgChar)return;
-  try{const c=JSON.parse(new TextDecoder().decode(await cfgChar.readValue()));
+  const cc=cfgChar;
+  try{const c=JSON.parse(new TextDecoder().decode(await gatt(()=>cc.readValue())));
     $('br').value=c.br;$('brOut').textContent=c.br;
     $('pulse').value=c.pulse;$('pulseOut').textContent=c.pulse;
     $('warn').value=Math.round(c.warn/1000);$('alarm').value=Math.round(c.alarm/1000);
@@ -676,7 +768,8 @@ async function saveCfg(){
   const body={br:+$('br').value,pulse:+$('pulse').value,warn:+$('warn').value*1000,
               alarm:+$('alarm').value*1000};
   for(let i=1;i<=N;i++)body['c'+i]=parseInt(chosen[i-1].slice(1),16);
-  try{await cfgChar.writeValue(new TextEncoder().encode(JSON.stringify(body)));
+  const cc=cfgChar;
+  try{await gatt(()=>bleWrite(cc,new TextEncoder().encode(JSON.stringify(body))));
     apply({colors:[...chosen],warn:body.warn,alarm:body.alarm});   // now it's on the token
     $('saveMsg').textContent='Saved';setTimeout(()=>{if($('saveMsg').textContent==='Saved')$('saveMsg').textContent='';},2500);}
   catch(e){$('saveMsg').textContent='Failed: '+e.message;}
@@ -697,12 +790,14 @@ async function connect(){
     const service=await server.getPrimaryService(SERVICE_UUID);
     fullChar=await service.getCharacteristic(CHAR_FULL);
     try{cfgChar=await service.getCharacteristic(CHAR_CFG);}catch(e){cfgChar=null;}
+    try{appChar=await service.getCharacteristic(CHAR_APP);}catch(e){appChar=null;}
     try{const lc=await service.getCharacteristic(CHAR_LIVE);
         await lc.startNotifications();
         lc.addEventListener('characteristicvaluechanged',readFull);}catch(e){}
-    await readFull(); await loadCfg();
-    const cur=currentName();
-    if(presets[cur]){formFromPreset(presets[cur]); await saveCfg();}
+    // The token is the source of truth: read what it's running and what it has
+    // stored. (This used to push the selected game setup onto the token on
+    // every connect, which wiped any colors sent since.)
+    await readFull(); await loadCfg(); await syncOnConnect();
     pollTimer=setInterval(readFull,2000); tickTimer=setInterval(render,250);
     setStatus('Connected',true);
   }catch(e){
@@ -711,7 +806,9 @@ async function connect(){
   }
 }
 function cleanup(){clearInterval(pollTimer);clearInterval(tickTimer);
-  pollTimer=tickTimer=null;fullChar=cfgChar=null;full=null;setStatus('Token disconnected',false);render();}
+  pollTimer=tickTimer=null;fullChar=cfgChar=appChar=null;full=null;clearTimeout(syncTimer);
+  gattQ=Promise.resolve();
+  setStatus('Token disconnected',false);render();}
 function disconnect(){if(device&&device.gatt.connected)device.gatt.disconnect();cleanup();}
 $('connect').addEventListener('click',connect);
 $('disconnect').addEventListener('click',disconnect);
